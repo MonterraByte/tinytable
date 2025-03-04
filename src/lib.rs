@@ -5,6 +5,8 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::uninlined_format_args)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! A tiny text table drawing library.
 //!
