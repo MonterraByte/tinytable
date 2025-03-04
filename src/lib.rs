@@ -37,6 +37,103 @@ const BOTTOM_INTERSECTION: &str = "┴";
 const LEFT_INTERSECTION: &str = "├";
 const RIGHT_INTERSECTION: &str = "┤";
 
+fn draw_horizontal_line<const COLUMN_COUNT: usize, W: Write>(
+    writer: &mut BufWriter<W>,
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+    left: &str,
+    right: &str,
+    intersection: &str,
+) -> io::Result<()> {
+    writer.write_all(left.as_bytes())?;
+    for (i, width) in column_widths.iter().enumerate() {
+        for _ in 0..width.get() {
+            writer.write_all(HORIZONTAL_LINE.as_bytes())?;
+        }
+        writer.write_all((if i == COLUMN_COUNT - 1 { right } else { intersection }).as_bytes())?;
+    }
+    writer.write_all("\n".as_bytes())
+}
+
+fn draw_cell<W: Write>(writer: &mut BufWriter<W>, value: &str, space: usize) -> io::Result<()> {
+    let value_width = value.width();
+    let padding = if unlikely(value_width > space) {
+        let mut remaining = space - 1;
+        for grapheme in value.graphemes(true) {
+            remaining = match remaining.checked_sub(grapheme.width()) {
+                Some(r) => r,
+                None => break,
+            };
+            writer.write_all(grapheme.as_bytes())?;
+        }
+        writer.write_all("…".as_bytes())?;
+        remaining
+    } else {
+        if value_width < space {
+            writer.write_all(" ".as_bytes())?;
+        }
+        writer.write_all(value.as_bytes())?;
+        (space - value_width).saturating_sub(1)
+    };
+    for _ in 0..padding {
+        writer.write_all(" ".as_bytes())?;
+    }
+    writer.write_all(VERTICAL_LINE.as_bytes())
+}
+
+macro_rules! write_table_start {
+    ($to:ident, $column_names:ident, $column_widths:ident) => {{
+        let _: () = const { assert!(COLUMN_COUNT > 0, "table must have columns") };
+
+        let mut writer = BufWriter::new($to);
+        draw_horizontal_line(&mut writer, $column_widths, TOP_LEFT, TOP_RIGHT, TOP_INTERSECTION)?;
+
+        writer.write_all(VERTICAL_LINE.as_bytes())?;
+        for (space, name) in $column_widths.iter().copied().map(NonZeroUsize::get).zip($column_names) {
+            draw_cell(&mut writer, name, space)?;
+        }
+        writer.write_all("\n".as_bytes())?;
+
+        draw_horizontal_line(
+            &mut writer,
+            $column_widths,
+            LEFT_INTERSECTION,
+            RIGHT_INTERSECTION,
+            INTERSECTION,
+        )?;
+
+        writer
+    }};
+}
+
+macro_rules! write_table_loop {
+    ($writer:ident, $row:ident, $column_widths:ident) => {{
+        let row_iter = $row
+            .into_iter()
+            .map(|value| value.to_string())
+            .chain(iter::repeat(String::new()));
+
+        $writer.write_all(VERTICAL_LINE.as_bytes())?;
+        for (space, value) in $column_widths.iter().copied().map(NonZeroUsize::get).zip(row_iter) {
+            let value_str = value.to_string();
+            draw_cell(&mut $writer, &value_str, space)?;
+        }
+        $writer.write_all("\n".as_bytes())?;
+    }};
+}
+
+macro_rules! write_table_end {
+    ($writer:ident, $column_widths:ident) => {{
+        draw_horizontal_line(
+            &mut $writer,
+            $column_widths,
+            BOTTOM_LEFT,
+            BOTTOM_RIGHT,
+            BOTTOM_INTERSECTION,
+        )?;
+        $writer.flush()
+    }};
+}
+
 /// Render a table.
 ///
 /// Writes a table containing data from `iter`, an [`Iterator`] over rows implementing [`IntoIterator`], which, in turn,
@@ -112,90 +209,13 @@ pub fn write_table<
     column_names: &[&str; COLUMN_COUNT],
     column_widths: &[NonZeroUsize; COLUMN_COUNT],
 ) -> io::Result<()> {
-    let _: () = const { assert!(COLUMN_COUNT > 0, "table must have columns") };
-
-    fn draw_horizontal_line<const COLUMN_COUNT: usize, W: Write>(
-        writer: &mut BufWriter<W>,
-        column_widths: &[NonZeroUsize; COLUMN_COUNT],
-        left: &str,
-        right: &str,
-        intersection: &str,
-    ) -> io::Result<()> {
-        writer.write_all(left.as_bytes())?;
-        for (i, width) in column_widths.iter().enumerate() {
-            for _ in 0..width.get() {
-                writer.write_all(HORIZONTAL_LINE.as_bytes())?;
-            }
-            writer.write_all((if i == COLUMN_COUNT - 1 { right } else { intersection }).as_bytes())?;
-        }
-        writer.write_all("\n".as_bytes())
-    }
-
-    fn draw_cell<W: Write>(writer: &mut BufWriter<W>, value: &str, space: usize) -> io::Result<()> {
-        let value_width = value.width();
-        let padding = if unlikely(value_width > space) {
-            let mut remaining = space - 1;
-            for grapheme in value.graphemes(true) {
-                remaining = match remaining.checked_sub(grapheme.width()) {
-                    Some(r) => r,
-                    None => break,
-                };
-                writer.write_all(grapheme.as_bytes())?;
-            }
-            writer.write_all("…".as_bytes())?;
-            remaining
-        } else {
-            if value_width < space {
-                writer.write_all(" ".as_bytes())?;
-            }
-            writer.write_all(value.as_bytes())?;
-            (space - value_width).saturating_sub(1)
-        };
-        for _ in 0..padding {
-            writer.write_all(" ".as_bytes())?;
-        }
-        writer.write_all(VERTICAL_LINE.as_bytes())
-    }
-
-    let mut writer = BufWriter::new(to);
-    draw_horizontal_line(&mut writer, column_widths, TOP_LEFT, TOP_RIGHT, TOP_INTERSECTION)?;
-
-    writer.write_all(VERTICAL_LINE.as_bytes())?;
-    for (space, name) in column_widths.iter().copied().map(NonZeroUsize::get).zip(column_names) {
-        draw_cell(&mut writer, name, space)?;
-    }
-    writer.write_all("\n".as_bytes())?;
-
-    draw_horizontal_line(
-        &mut writer,
-        column_widths,
-        LEFT_INTERSECTION,
-        RIGHT_INTERSECTION,
-        INTERSECTION,
-    )?;
+    let mut writer = write_table_start!(to, column_names, column_widths);
 
     for row in iter {
-        let row_iter = row
-            .into_iter()
-            .map(|value| value.to_string())
-            .chain(iter::repeat(String::new()));
-
-        writer.write_all(VERTICAL_LINE.as_bytes())?;
-        for (space, value) in column_widths.iter().copied().map(NonZeroUsize::get).zip(row_iter) {
-            let value_str = value.to_string();
-            draw_cell(&mut writer, &value_str, space)?;
-        }
-        writer.write_all("\n".as_bytes())?;
+        write_table_loop!(writer, row, column_widths);
     }
 
-    draw_horizontal_line(
-        &mut writer,
-        column_widths,
-        BOTTOM_LEFT,
-        BOTTOM_RIGHT,
-        BOTTOM_INTERSECTION,
-    )?;
-    writer.flush()
+    write_table_end!(writer, column_widths)
 }
 
 pub struct ToStringCell(Cell<String>);
