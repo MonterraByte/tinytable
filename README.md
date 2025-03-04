@@ -11,6 +11,7 @@ A tiny text table drawing library for Rust.
 * Small code size (it's one function!)
 * Minimal dependencies (not zero, because Unicode is hard)
 * Iterator support (you don't need to collect all the data to display at once, it can be streamed)
+    * Optional support for the [`fallible-iterator`](https://crates.io/crates/fallible-iterator) crate
 * Unicode support
 * Nothing more!
 
