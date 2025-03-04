@@ -5,6 +5,8 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::uninlined_format_args)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! A tiny text table drawing library.
 //!
@@ -19,6 +21,7 @@
 //! See [`write_table`] for examples and usage details.
 
 use std::cell::Cell;
+use std::fmt::Display;
 use std::io::{self, BufWriter, Write};
 use std::iter;
 use std::num::NonZeroUsize;
@@ -239,7 +242,7 @@ pub fn write_table<
 /// [`FallibleIteratorTableWriteError::Iterator`] is returned.
 #[cfg(feature = "fallible-iterator")]
 pub fn write_table_fallible<
-    Cell: Display,
+    Cell: ToString,
     Row: IntoIterator<Item = Cell>,
     I: FallibleIterator<Item = Row, Error = IteratorError>,
     IteratorError,

@@ -14,3 +14,7 @@ exclude = ["/.github"]
 fallible-iterator = { version = "0.3", optional = true }
 unicode-width = { version = "0.2", default-features = false }
 unicode-segmentation = "1.12"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
