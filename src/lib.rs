@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
+#![allow(clippy::uninlined_format_args)]
 
 //! A tiny text table drawing library.
 //!
@@ -22,8 +23,14 @@ use std::io::{self, BufWriter, Write};
 use std::iter;
 use std::num::NonZeroUsize;
 
+#[cfg(feature = "fallible-iterator")]
+use std::fmt::{self, Debug};
+
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+#[cfg(feature = "fallible-iterator")]
+use fallible_iterator::FallibleIterator;
 
 const HORIZONTAL_LINE: &str = "─";
 const VERTICAL_LINE: &str = "│";
@@ -217,6 +224,73 @@ pub fn write_table<
 
     write_table_end!(writer, column_widths)
 }
+
+/// Render a table from a fallible iterator.
+///
+/// It differs from [`write_table`] in that `iter` is a [`FallibleIterator`] from the [`fallible-iterator`] crate.
+///
+/// [`FallibleIterator`]: FallibleIterator
+/// [`fallible-iterator`]: fallible_iterator
+///
+/// # Errors
+///
+/// If an I/O error is encountered while writing to the `to` writer, [`FallibleIteratorTableWriteError::Io`]
+/// is returned. If the iterator produces an error when getting the next row,
+/// [`FallibleIteratorTableWriteError::Iterator`] is returned.
+#[cfg(feature = "fallible-iterator")]
+pub fn write_table_fallible<
+    Cell: Display,
+    Row: IntoIterator<Item = Cell>,
+    I: FallibleIterator<Item = Row, Error = IteratorError>,
+    IteratorError,
+    const COLUMN_COUNT: usize,
+>(
+    to: impl Write,
+    mut iter: I,
+    column_names: &[&str; COLUMN_COUNT],
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+) -> Result<(), FallibleIteratorTableWriteError<IteratorError>> {
+    let mut writer = write_table_start!(to, column_names, column_widths);
+
+    let ret = loop {
+        match iter.next() {
+            Ok(Some(row)) => write_table_loop!(writer, row, column_widths),
+            Ok(None) => break Ok(()),
+            Err(err) => break Err(FallibleIteratorTableWriteError::Iterator(err)),
+        }
+    };
+
+    write_table_end!(writer, column_widths)?;
+    ret
+}
+
+/// Error type of [`write_table_fallible`].
+#[cfg(feature = "fallible-iterator")]
+#[derive(Debug)]
+pub enum FallibleIteratorTableWriteError<IteratorError> {
+    Io(io::Error),
+    Iterator(IteratorError),
+}
+
+#[cfg(feature = "fallible-iterator")]
+impl<E> From<io::Error> for FallibleIteratorTableWriteError<E> {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+#[cfg(feature = "fallible-iterator")]
+impl<E: Display> Display for FallibleIteratorTableWriteError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            FallibleIteratorTableWriteError::Io(err) => write!(f, "failed to write table: {}", err),
+            FallibleIteratorTableWriteError::Iterator(err) => write!(f, "failed to get next table row: {}", err),
+        }
+    }
+}
+
+#[cfg(feature = "fallible-iterator")]
+impl<E: Debug + Display> std::error::Error for FallibleIteratorTableWriteError<E> {}
 
 pub struct ToStringCell(Cell<String>);
 
@@ -440,6 +514,61 @@ awefz 234 23
 │ あいうえお │スペー…│
 │🦀🦀🦀🦀🦀🦀│ 🗿🗿🗿│
 ╰────────────┴───────╯
+"
+        );
+        assert_consistent_width(&output);
+    }
+
+    #[cfg(feature = "fallible-iterator")]
+    #[test]
+    fn fallible_ok() {
+        let data = [["q3rrq", "qfqh843f9", "qa"], ["123", "", "aaaaaa"]];
+        let mut output = Vec::new();
+        write_table_fallible(
+            &mut output,
+            fallible_iterator::convert(data.iter().map(Ok::<_, ()>)),
+            &["A", "B", "C"],
+            &[nz!(5), nz!(10), nz!(4)],
+        )
+        .expect("write_table failed");
+
+        let output = String::from_utf8(output).expect("valid UTF-8");
+        assert_eq!(
+            output,
+            "╭─────┬──────────┬────╮
+│ A   │ B        │ C  │
+├─────┼──────────┼────┤
+│q3rrq│ qfqh843f9│ qa │
+│ 123 │          │aaa…│
+╰─────┴──────────┴────╯
+"
+        );
+        assert_consistent_width(&output);
+    }
+
+    #[cfg(feature = "fallible-iterator")]
+    #[test]
+    fn fallible_err() {
+        let data = [["q3rrq", "qfqh843f9", "qa"], ["123", "", "aaaaaa"]];
+        let mut output = Vec::new();
+        let result = write_table_fallible(
+            &mut output,
+            fallible_iterator::convert(data.iter().map(Ok::<_, &str>))
+                .take(1)
+                .chain(fallible_iterator::once_err("error")),
+            &["A", "B", "C"],
+            &[nz!(5), nz!(10), nz!(4)],
+        );
+        assert!(matches!(result, Err(FallibleIteratorTableWriteError::Iterator(_))));
+
+        let output = String::from_utf8(output).expect("valid UTF-8");
+        assert_eq!(
+            output,
+            "╭─────┬──────────┬────╮
+│ A   │ B        │ C  │
+├─────┼──────────┼────┤
+│q3rrq│ qfqh843f9│ qa │
+╰─────┴──────────┴────╯
 "
         );
         assert_consistent_width(&output);

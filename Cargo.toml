@@ -11,5 +11,6 @@ keywords = ["table", "tabular", "terminal", "text", "unicode"]
 exclude = ["/.github"]
 
 [dependencies]
+fallible-iterator = { version = "0.3", optional = true }
 unicode-width = { version = "0.2", default-features = false }
 unicode-segmentation = "1.12"
