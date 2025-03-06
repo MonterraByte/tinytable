@@ -101,7 +101,7 @@ const RIGHT_INTERSECTION: &str = "┤";
 /// If an I/O error is encountered while writing to the `to` writer, that error will be returned.
 pub fn write_table<
     Cell: Display,
-    CellIter: ExactSizeIterator<Item = Cell>,
+    CellIter: Iterator<Item = Cell>,
     Row: IntoIterator<IntoIter = CellIter>,
     I: Iterator<Item = Row>,
     const COLUMN_COUNT: usize,
