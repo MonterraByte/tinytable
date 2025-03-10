@@ -295,7 +295,7 @@ impl<E: Display> Display for FallibleIteratorTableWriteError<E> {
 #[cfg(feature = "fallible-iterator")]
 impl<E: Debug + Display> std::error::Error for FallibleIteratorTableWriteError<E> {}
 
-pub struct ToStringCell(Cell<String>);
+pub struct ToStringCell(pub Cell<String>);
 
 #[allow(clippy::to_string_trait_impl)]
 //noinspection RsImplToString
