@@ -22,6 +22,8 @@ jobs:
 
   check:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: dtolnay/rust-toolchain@stable
       - uses: r7kamura/rust-problem-matchers@v1
@@ -30,6 +32,8 @@ jobs:
 
   clippy:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: dtolnay/rust-toolchain@stable
         with:
