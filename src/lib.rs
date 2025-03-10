@@ -17,7 +17,6 @@
 //!
 //! See [`write_table`] for examples and usage details.
 
-use std::fmt::Display;
 use std::io::{self, BufWriter, Write};
 use std::iter;
 use std::num::NonZeroUsize;
@@ -40,10 +39,12 @@ const RIGHT_INTERSECTION: &str = "┤";
 /// Render a table.
 ///
 /// Writes a table containing data from `iter`, an [`Iterator`] over rows implementing [`IntoIterator`], which, in turn,
-/// yields values that implement [`Display`], into the `to` writer (which can be [`stdout`], a [`Vec<u8>`], etc.).
+/// yields values that implement [`Display`]/[`ToString`], into the `to` writer (which can be [`stdout`],
+/// a [`Vec<u8>`], etc.).
 ///
 /// The width of each column is fixed (as specified by `column_widths`).
 ///
+/// [`Display`]: std::fmt::Display
 /// [`stdout`]: std::io::Stdout
 ///
 /// # Examples
@@ -100,7 +101,7 @@ const RIGHT_INTERSECTION: &str = "┤";
 ///
 /// If an I/O error is encountered while writing to the `to` writer, that error will be returned.
 pub fn write_table<
-    Cell: Display,
+    Cell: ToString,
     Row: IntoIterator<Item = Cell>,
     I: Iterator<Item = Row>,
     const COLUMN_COUNT: usize,
