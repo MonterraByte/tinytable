@@ -17,6 +17,7 @@
 //!
 //! See [`write_table`] for examples and usage details.
 
+use std::cell::Cell;
 use std::io::{self, BufWriter, Write};
 use std::iter;
 use std::num::NonZeroUsize;
@@ -197,6 +198,115 @@ pub fn write_table<
     writer.flush()
 }
 
+#[doc(hidden)]
+pub struct ToStringCell(pub Cell<String>);
+
+#[allow(clippy::to_string_trait_impl)]
+//noinspection RsImplToString
+impl ToString for ToStringCell {
+    fn to_string(&self) -> String {
+        self.0.take()
+    }
+}
+
+// TODO: replace with ${count()} when feature `macro_metavar_expr` is stabilized
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! count_exprs {
+    () => {0usize};
+    ($_x:expr) => {1usize};
+    ($_head:expr, $($tail:expr),*) => {1usize + count_exprs!($($tail),*)};
+}
+
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! display_wrapper_impl {
+    ($wrapped_type:ty, $($formatter:expr),+) => {
+        const VISITORS: [fn(&$wrapped_type) -> ::std::string::String; $crate::count_exprs!($($formatter),+)] = [$($formatter),+];
+
+        pub fn new(item: $wrapped_type) -> Self {
+            Self { item, index: 0 }
+        }
+
+        #[inline(always)]
+        fn next_impl(&mut self) -> ::core::option::Option<<Self as ::core::iter::Iterator>::Item> {
+            if let Some(visitor) = Self::VISITORS.get(self.index) {
+                self.index += 1;
+                Some($crate::ToStringCell(::core::cell::Cell::new(visitor(&self.item))))
+            } else {
+                None
+            }
+        }
+    };
+}
+
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! display_wrapper_iter_impl {
+    () => {
+        type Item = $crate::ToStringCell;
+
+        fn next(&mut self) -> ::core::option::Option<Self::Item> {
+            self.next_impl()
+        }
+    };
+}
+
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! display_wrapper_owned {
+    ($vis:vis, $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $vis struct $name {
+            index: ::core::primitive::usize,
+            item: $wrapped_type,
+        }
+
+        impl $name {
+            display_wrapper_impl!($wrapped_type, $($formatter),+);
+        }
+
+        impl ::core::iter::Iterator for $name {
+            display_wrapper_iter_impl!();
+        }
+    };
+}
+
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! display_wrapper_borrowed {
+    ($vis:vis, $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $vis struct $name<'wrapper> {
+            index: ::core::primitive::usize,
+            item: &'wrapper $wrapped_type,
+        }
+
+        impl<'wrapper> $name<'wrapper> {
+            display_wrapper_impl!(&'wrapper $wrapped_type, $($formatter),+);
+        }
+
+        impl<'wrapper> ::core::iter::Iterator for $name<'wrapper> {
+            display_wrapper_iter_impl!();
+        }
+    };
+}
+
+/// Macro that generates a wrapper that implements `Iterator<Item = ToString>` for any type
+/// using the provided formatters.
+#[macro_export]
+macro_rules! display_wrapper {
+    ($vis:vis $name:ident, &$wrapped_type:ty, $($formatter:expr),+) => {
+        display_wrapper_borrowed!($vis, $name, $wrapped_type, $($formatter),+);
+    };
+    ($vis:vis $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        display_wrapper_owned!($vis, $name, $wrapped_type, $($formatter),+);
+    };
+}
+
 #[allow(clippy::inline_always)]
 #[inline(always)]
 const fn unlikely(b: bool) -> bool {
@@ -367,6 +477,70 @@ awefz 234 23
 "
         );
         assert_consistent_width(&output);
+    }
+
+    mod display_wrapper {
+        use super::*;
+        use std::net::Ipv4Addr;
+
+        const COLUMN_NAMES: [&str; 3] = ["Full address", "BE bits", "Private"];
+        const COLUMN_WIDTHS: [NonZeroUsize; 3] = [nz!(17), nz!(12), nz!(7)];
+        display_wrapper!(
+            AddrWrapper,
+            Ipv4Addr,
+            |a| a.to_string(),
+            |a| format!("0x{:x}", a.to_bits().to_be()),
+            |a| if a.is_private() { "yes" } else { "no" }.to_string()
+        );
+        display_wrapper!(
+            AddrRefWrapper,
+            &Ipv4Addr,
+            |a| a.to_string(),
+            |a| format!("0x{:x}", a.to_bits().to_be()),
+            |a| if a.is_private() { "yes" } else { "no" }.to_string()
+        );
+
+        #[test]
+        fn test() {
+            let addrs: [Ipv4Addr; 3] = [
+                Ipv4Addr::new(192, 168, 0, 1),
+                Ipv4Addr::new(1, 1, 1, 1),
+                Ipv4Addr::new(255, 127, 63, 31),
+            ];
+
+            let mut output = Vec::new();
+            write_table(
+                &mut output,
+                addrs.iter().copied().map(AddrWrapper::new),
+                &COLUMN_NAMES,
+                &COLUMN_WIDTHS,
+            )
+            .expect("write_table failed");
+
+            let output = String::from_utf8(output).expect("valid UTF-8");
+            assert_eq!(
+                output,
+                "╭─────────────────┬────────────┬───────╮
+│ Full address    │ BE bits    │Private│
+├─────────────────┼────────────┼───────┤
+│ 192.168.0.1     │ 0x100a8c0  │ yes   │
+│ 1.1.1.1         │ 0x1010101  │ no    │
+│ 255.127.63.31   │ 0x1f3f7fff │ no    │
+╰─────────────────┴────────────┴───────╯
+"
+            );
+            assert_consistent_width(&output);
+
+            let mut ref_output = Vec::new();
+            write_table(
+                &mut ref_output,
+                addrs.iter().map(AddrRefWrapper::new),
+                &COLUMN_NAMES,
+                &COLUMN_WIDTHS,
+            )
+            .expect("write_table failed");
+            assert_eq!(output.as_bytes(), ref_output);
+        }
     }
 }
 
