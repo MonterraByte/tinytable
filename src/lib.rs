@@ -17,7 +17,7 @@
 //!
 //! See [`write_table`] for examples and usage details.
 
-use std::fmt::Display;
+use std::cell::Cell;
 use std::io::{self, BufWriter, Write};
 use std::iter;
 use std::num::NonZeroUsize;
@@ -40,10 +40,12 @@ const RIGHT_INTERSECTION: &str = "┤";
 /// Render a table.
 ///
 /// Writes a table containing data from `iter`, an [`Iterator`] over rows implementing [`IntoIterator`], which, in turn,
-/// yields values that implement [`Display`], into the `to` writer (which can be [`stdout`], a [`Vec<u8>`], etc.).
+/// yields values that implement [`Display`]/[`ToString`], into the `to` writer (which can be [`stdout`],
+/// a [`Vec<u8>`], etc.).
 ///
 /// The width of each column is fixed (as specified by `column_widths`).
 ///
+/// [`Display`]: std::fmt::Display
 /// [`stdout`]: std::io::Stdout
 ///
 /// # Examples
@@ -100,7 +102,7 @@ const RIGHT_INTERSECTION: &str = "┤";
 ///
 /// If an I/O error is encountered while writing to the `to` writer, that error will be returned.
 pub fn write_table<
-    Cell: Display,
+    Cell: ToString,
     Row: IntoIterator<Item = Cell>,
     I: Iterator<Item = Row>,
     const COLUMN_COUNT: usize,
@@ -194,6 +196,61 @@ pub fn write_table<
         BOTTOM_INTERSECTION,
     )?;
     writer.flush()
+}
+
+pub struct ToStringCell(Cell<String>);
+
+//#[allow(clippy::to_string_trait_impl)]
+//noinspection RsImplToString
+impl ToString for ToStringCell {
+    fn to_string(&self) -> String {
+        self.0.take()
+    }
+}
+
+// TODO: replace with ${count()} when feature `macro_metavar_expr` is stabilized
+macro_rules! count_exprs {
+    () => {0usize};
+    ($_x:expr) => {1usize};
+    ($_head:expr, $($tail:expr),*) => {1usize + count_exprs!($($tail),*)};
+}
+
+/// Macro that generates a wrapper that implements `Iterator<Item = ToString>` for any type
+/// using the provided formatters.
+#[macro_export]
+macro_rules! display_wrapper {
+    ($wrapper_vis:vis $wrapper_name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $wrapper_vis struct $wrapper_name<'wrapper> {
+            index: ::core::primitive::usize,
+            item: $wrapped_type,
+        }
+
+        impl<'wrapper> $wrapper_name<'wrapper> {
+            const VISITORS: [fn(&$wrapped_type) -> ::std::string::String; count_exprs!($($formatter),+)] = [$($formatter),+];
+
+            pub fn new(item: $wrapped_type) -> Self {
+                Self { item, index: 0 }
+            }
+
+            #[inline(always)]
+            fn next_impl(&mut self) -> ::core::option::Option<<Self as ::core::iter::Iterator>::Item> {
+                if let Some(visitor) = Self::VISITORS.get(self.index) {
+                    self.index += 1;
+                    Some($crate::ToStringCell(::core::cell::Cell::new(visitor(&self.item))))
+                } else {
+                    None
+                }
+            }
+        }
+
+        impl<'wrapper> ::core::iter::Iterator for $wrapper_name<'wrapper> {
+            type Item = $crate::ToStringCell;
+
+            fn next(&mut self) -> ::core::option::Option<Self::Item> {
+                self.next_impl()
+            }
+        }
+    };
 }
 
 #[allow(clippy::inline_always)]
@@ -366,6 +423,52 @@ awefz 234 23
 "
         );
         assert_consistent_width(&output);
+    }
+
+    mod display_wrapper {
+        use super::*;
+        use std::net::Ipv4Addr;
+
+        const COLUMN_NAMES: [&str; 3] = ["Full address", "BE bits", "Private"];
+        display_wrapper!(
+            PathWrapper,
+            &'wrapper Ipv4Addr,
+            |a| a.to_string(),
+            |a| format!("0x{:x}", a.to_bits().to_be()),
+            |a| if a.is_private() { "yes" } else { "no" }.to_string()
+        );
+
+        #[test]
+        fn test() {
+            let addrs: [Ipv4Addr; 3] = [
+                Ipv4Addr::new(192, 168, 0, 1),
+                Ipv4Addr::new(1, 1, 1, 1),
+                Ipv4Addr::new(255, 127, 63, 31),
+            ];
+
+            let mut output = Vec::new();
+            write_table(
+                &mut output,
+                addrs.iter().map(PathWrapper::new),
+                &COLUMN_NAMES,
+                &[nz!(17), nz!(12), nz!(7)],
+            )
+            .expect("write_table failed");
+
+            let output = String::from_utf8(output).expect("valid UTF-8");
+            assert_eq!(
+                output,
+                "╭─────────────────┬────────────┬───────╮
+│ Full address    │ BE bits    │Private│
+├─────────────────┼────────────┼───────┤
+│ 192.168.0.1     │ 0x100a8c0  │ yes   │
+│ 1.1.1.1         │ 0x1010101  │ no    │
+│ 255.127.63.31   │ 0x1f3f7fff │ no    │
+╰─────────────────┴────────────┴───────╯
+"
+            );
+            assert_consistent_width(&output);
+        }
     }
 }
 
