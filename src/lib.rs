@@ -306,6 +306,9 @@ impl ToString for ToStringCell {
 }
 
 // TODO: replace with ${count()} when feature `macro_metavar_expr` is stabilized
+/// DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
 macro_rules! count_exprs {
     () => {0usize};
     ($_x:expr) => {1usize};
@@ -323,7 +326,7 @@ macro_rules! display_wrapper {
         }
 
         impl<'wrapper> $wrapper_name<'wrapper> {
-            const VISITORS: [fn(&$wrapped_type) -> ::std::string::String; count_exprs!($($formatter),+)] = [$($formatter),+];
+            const VISITORS: [fn(&$wrapped_type) -> ::std::string::String; $crate::count_exprs!($($formatter),+)] = [$($formatter),+];
 
             pub fn new(item: $wrapped_type) -> Self {
                 Self { item, index: 0 }
