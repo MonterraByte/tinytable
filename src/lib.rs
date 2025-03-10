@@ -200,7 +200,7 @@ pub fn write_table<
 
 pub struct ToStringCell(Cell<String>);
 
-#[allow(clippy::to_string_trait_impl)]
+//#[allow(clippy::to_string_trait_impl)]
 //noinspection RsImplToString
 impl ToString for ToStringCell {
     fn to_string(&self) -> String {
