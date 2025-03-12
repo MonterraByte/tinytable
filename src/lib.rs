@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
+#![allow(clippy::uninlined_format_args)]
 
 //! A tiny text table drawing library.
 //!
@@ -18,8 +19,8 @@
 //! See [`write_table`] for examples and usage details.
 
 use std::fmt::Display;
+use std::fmt::Write as FmtWrite;
 use std::io::{self, BufWriter, Write};
-use std::iter;
 use std::num::NonZeroUsize;
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -172,17 +173,19 @@ pub fn write_table<
         INTERSECTION,
     )?;
 
+    let mut value = String::new();
     for row in iter {
-        let row_iter = row
-            .into_iter()
-            .map(|value| value.to_string())
-            .chain(iter::repeat(String::new()));
-
         writer.write_all(VERTICAL_LINE.as_bytes())?;
-        for (space, value) in column_widths.iter().copied().map(NonZeroUsize::get).zip(row_iter) {
-            let value_str = value.to_string();
-            draw_cell(&mut writer, &value_str, space)?;
+
+        let mut row_iter = row.into_iter();
+        for space in column_widths.iter().copied().map(NonZeroUsize::get) {
+            if let Some(col) = row_iter.next() {
+                write!(&mut value, "{}", col).expect("formatting to a string shouldn't fail");
+            }
+            draw_cell(&mut writer, &value, space)?;
+            value.clear();
         }
+
         writer.write_all("\n".as_bytes())?;
     }
 
