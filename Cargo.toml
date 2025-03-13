@@ -13,3 +13,13 @@ exclude = ["/.github"]
 [dependencies]
 unicode-width = { version = "0.2", default-features = false }
 unicode-segmentation = "1.12"
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bench]]
+name = "benches"
+harness = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tinytable_profile_alloc)'] }
