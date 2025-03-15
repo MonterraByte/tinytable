@@ -5,6 +5,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::uninlined_format_args)]
+#![feature(macro_metavar_expr_concat)]
 
 //! A tiny text table drawing library.
 //!
@@ -199,6 +200,98 @@ pub fn write_table<
     writer.flush()
 }
 
+// TODO: replace with ${count()} when feature `macro_metavar_expr` is stabilized
+/// INTERNAL USE ONLY. DO NOT USE.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! count_exprs {
+    () => {0usize};
+    ($_x:expr) => {1usize};
+    ($_head:expr, $($tail:expr),*) => {1usize + count_exprs!($($tail),*)};
+}
+
+/// Macro that generates a wrapper that implements `Iterator<Item = ToString>` for any type
+/// using the provided formatters.
+#[macro_export]
+macro_rules! display_wrapper {
+    ($vis:vis $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $vis struct $name<I: ::core::iter::Iterator<Item = $wrapped_type>> {
+            iter: I,
+            current_value: ::std::rc::Rc<::core::cell::RefCell<::core::option::Option<$wrapped_type>>>,
+        }
+
+        impl<I: ::core::iter::Iterator<Item = $wrapped_type>> $name<I> {
+            pub fn new(iter: I) -> Self {
+                Self {
+                    iter,
+                    current_value: ::core::default::Default::default(),
+                }
+            }
+        }
+
+        impl<I: ::core::iter::Iterator<Item = $wrapped_type>> ::core::iter::Iterator for $name<I> {
+            type Item = ${concat($name, RowIter)};
+
+            fn next(&mut self) -> ::core::option::Option<Self::Item> {
+                let new_value = self.iter.next();
+                let is_some = new_value.is_some();
+                self.current_value.replace(new_value);
+
+                if is_some {
+                     Some(${concat($name, RowIter)} {
+                         index: 0,
+                         current_value_ref: ::std::rc::Rc::downgrade(&self.current_value),
+                     })
+                } else {
+                    None
+                }
+            }
+        }
+
+        $vis struct ${concat($name, RowIter)} {
+            index: ::core::primitive::usize,
+            current_value_ref: ::std::rc::Weak<::core::cell::RefCell<::core::option::Option<$wrapped_type>>>,
+        }
+
+        impl ${concat($name, RowIter)} {
+            const FORMATTERS: [fn(&$wrapped_type, &mut ::core::fmt::Formatter) -> ::core::fmt::Result; $crate::count_exprs!($($formatter),+)] = [$($formatter),+];
+
+            #[allow(clippy::inline_always)]
+            #[inline(always)]
+            fn next_impl(&mut self) -> ::core::option::Option<<Self as ::core::iter::Iterator>::Item> {
+                if let Some(formatter) = Self::FORMATTERS.get(self.index) {
+                    self.index += 1;
+                    Some(${concat($name, CellDisplay)} {
+                        formatter: *formatter,
+                        current_value_ref: ::std::rc::Weak::clone(&self.current_value_ref),
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+
+        impl ::core::iter::Iterator for ${concat($name, RowIter)} {
+            type Item = ${concat($name, CellDisplay)};
+
+            fn next(&mut self) -> ::core::option::Option<Self::Item> {
+                self.next_impl()
+            }
+        }
+
+        $vis struct ${concat($name, CellDisplay)} {
+            formatter: fn(&$wrapped_type, &mut ::core::fmt::Formatter) -> ::core::fmt::Result,
+            current_value_ref: ::std::rc::Weak<::core::cell::RefCell<::core::option::Option<$wrapped_type>>>,
+        }
+
+        impl ::core::fmt::Display for ${concat($name, CellDisplay)} {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                (self.formatter)(self.current_value_ref.upgrade().expect("`Display` wrapper was not dropped").borrow().as_ref().expect("cell `Display` wrapper is used immediately after being created"), f)
+            }
+        }
+    };
+}
+
 #[allow(clippy::inline_always)]
 #[inline(always)]
 const fn unlikely(b: bool) -> bool {
@@ -369,6 +462,69 @@ awefz 234 23
 "
         );
         assert_consistent_width(&output);
+    }
+    mod display_wrapper {
+        use super::*;
+        use std::net::Ipv4Addr;
+
+        const COLUMN_NAMES: [&str; 3] = ["Full address", "BE bits", "Private"];
+        const COLUMN_WIDTHS: [NonZeroUsize; 3] = [nz!(17), nz!(12), nz!(7)];
+        display_wrapper!(
+            AddrWrapper,
+            Ipv4Addr,
+            |a, f| write!(f, "{}", a),
+            |a, f| write!(f, "0x{:x}", a.to_bits().to_be()),
+            |a, f| write!(f, "{}", if a.is_private() { "yes" } else { "no" })
+        );
+        /*display_wrapper!(
+            AddrRefWrapper,
+            &Ipv4Addr,
+            |a, f| write!(f, "{}", a),
+            |a, f| write!(f, "0x{:x}", a.to_bits().to_be()),
+            |a, f| write!(f, "{}", if a.is_private() { "yes" } else { "no" })
+        );*/
+
+        #[test]
+        fn test() {
+            let addrs: [Ipv4Addr; 3] = [
+                Ipv4Addr::new(192, 168, 0, 1),
+                Ipv4Addr::new(1, 1, 1, 1),
+                Ipv4Addr::new(255, 127, 63, 31),
+            ];
+
+            let mut output = Vec::new();
+            write_table(
+                &mut output,
+                AddrWrapper::new(addrs.iter().copied()),
+                &COLUMN_NAMES,
+                &COLUMN_WIDTHS,
+            )
+            .expect("write_table failed");
+
+            let output = String::from_utf8(output).expect("valid UTF-8");
+            assert_eq!(
+                output,
+                "╭─────────────────┬────────────┬───────╮
+│ Full address    │ BE bits    │Private│
+├─────────────────┼────────────┼───────┤
+│ 192.168.0.1     │ 0x100a8c0  │ yes   │
+│ 1.1.1.1         │ 0x1010101  │ no    │
+│ 255.127.63.31   │ 0x1f3f7fff │ no    │
+╰─────────────────┴────────────┴───────╯
+"
+            );
+            assert_consistent_width(&output);
+
+            /*let mut ref_output = Vec::new();
+            write_table(
+                &mut ref_output,
+                AddrRefWrapper::new(addrs.iter()),
+                &COLUMN_NAMES,
+                &COLUMN_WIDTHS,
+            )
+            .expect("write_table failed");
+            assert_eq!(output.as_bytes(), ref_output);*/
+        }
     }
 }
 
