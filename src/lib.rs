@@ -210,12 +210,10 @@ macro_rules! count_exprs {
     ($_head:expr, $($tail:expr),*) => {1usize + count_exprs!($($tail),*)};
 }
 
-/// Macro that generates a wrapper that implements `Iterator<Item = ToString>` for any type
-/// using the provided formatters.
 #[macro_export]
-macro_rules! display_wrapper {
-    ($vis:vis $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
-        $vis struct $name<I: ::core::iter::Iterator<Item = $wrapped_type>> {
+macro_rules! display_wrapper_inner {
+    ($(with hrtb $hrtb:tt,)? $vis:vis $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $vis struct $name<I: $($hrtb)? ::core::iter::Iterator<Item = $wrapped_type>> {
             iter: I,
             current_value: ::std::rc::Rc<::core::cell::RefCell<::core::option::Option<$wrapped_type>>>,
         }
@@ -292,6 +290,17 @@ macro_rules! display_wrapper {
     };
 }
 
+/// Macro that generates a wrapper that implements `Iterator<Item = ToString>` for any type
+/// using the provided formatters.
+#[macro_export]
+macro_rules! display_wrapper {
+    ($vis:vis $name:ident, &$wrapped_type:ty, $($formatter:expr),+) => {
+        $crate::display_wrapper_inner!(with hrtb for<'a>, $vis $name, &'a $wrapped_type, $($formatter),+);
+    };
+    ($vis:vis $name:ident, $wrapped_type:ty, $($formatter:expr),+) => {
+        $crate::display_wrapper_inner!($vis $name, $wrapped_type, $($formatter),+);
+    };
+}
 #[allow(clippy::inline_always)]
 #[inline(always)]
 const fn unlikely(b: bool) -> bool {
@@ -476,13 +485,13 @@ awefz 234 23
             |a, f| write!(f, "0x{:x}", a.to_bits().to_be()),
             |a, f| write!(f, "{}", if a.is_private() { "yes" } else { "no" })
         );
-        /*display_wrapper!(
+        display_wrapper!(
             AddrRefWrapper,
             &Ipv4Addr,
             |a, f| write!(f, "{}", a),
             |a, f| write!(f, "0x{:x}", a.to_bits().to_be()),
             |a, f| write!(f, "{}", if a.is_private() { "yes" } else { "no" })
-        );*/
+        );
 
         #[test]
         fn test() {
@@ -515,7 +524,7 @@ awefz 234 23
             );
             assert_consistent_width(&output);
 
-            /*let mut ref_output = Vec::new();
+            let mut ref_output = Vec::new();
             write_table(
                 &mut ref_output,
                 AddrRefWrapper::new(addrs.iter()),
@@ -523,7 +532,7 @@ awefz 234 23
                 &COLUMN_WIDTHS,
             )
             .expect("write_table failed");
-            assert_eq!(output.as_bytes(), ref_output);*/
+            assert_eq!(output.as_bytes(), ref_output);
         }
     }
 }
