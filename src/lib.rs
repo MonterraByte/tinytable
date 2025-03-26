@@ -111,6 +111,32 @@ pub fn write_table<
     column_names: &[&str; COLUMN_COUNT],
     column_widths: &[NonZeroUsize; COLUMN_COUNT],
 ) -> io::Result<()> {
+    let mut writer = write_table_start(to, column_names, column_widths)?;
+
+    let mut value = String::new();
+    for row in iter {
+        writer.write_all(VERTICAL_LINE.as_bytes())?;
+
+        let mut row_iter = row.into_iter();
+        for space in column_widths.iter().copied().map(NonZeroUsize::get) {
+            if let Some(col) = row_iter.next() {
+                write!(&mut value, "{}", col).expect("formatting to a string shouldn't fail");
+            }
+            draw_cell(&mut writer, &value, space)?;
+            value.clear();
+        }
+
+        writer.write_all("\n".as_bytes())?;
+    }
+
+    write_table_end(writer, column_widths)
+}
+
+fn write_table_start<W: Write, const COLUMN_COUNT: usize>(
+    to: W,
+    column_names: &[&str; COLUMN_COUNT],
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+) -> Result<BufWriter<W>, io::Error> {
     let _: () = const { assert!(COLUMN_COUNT > 0, "table must have columns") };
 
     let mut writer = BufWriter::new(to);
@@ -130,22 +156,13 @@ pub fn write_table<
         INTERSECTION,
     )?;
 
-    let mut value = String::new();
-    for row in iter {
-        writer.write_all(VERTICAL_LINE.as_bytes())?;
+    Ok(writer)
+}
 
-        let mut row_iter = row.into_iter();
-        for space in column_widths.iter().copied().map(NonZeroUsize::get) {
-            if let Some(col) = row_iter.next() {
-                write!(&mut value, "{}", col).expect("formatting to a string shouldn't fail");
-            }
-            draw_cell(&mut writer, &value, space)?;
-            value.clear();
-        }
-
-        writer.write_all("\n".as_bytes())?;
-    }
-
+fn write_table_end<W: Write, const COLUMN_COUNT: usize>(
+    mut writer: BufWriter<W>,
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+) -> Result<(), io::Error> {
     draw_horizontal_line(
         &mut writer,
         column_widths,
