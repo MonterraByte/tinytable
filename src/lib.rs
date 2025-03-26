@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::items_after_statements)]
+#![allow(clippy::missing_panics_doc)]
 #![allow(clippy::uninlined_format_args)]
 
 //! A tiny text table drawing library.
@@ -18,8 +19,8 @@
 //!
 //! See [`write_table`] for examples and usage details.
 
-use std::fmt::Display;
 use std::fmt::Write as FmtWrite;
+use std::fmt::{self, Display};
 use std::io::{self, BufWriter, Write};
 use std::num::NonZeroUsize;
 
@@ -121,6 +122,41 @@ pub fn write_table<
         for space in column_widths.iter().copied().map(NonZeroUsize::get) {
             if let Some(col) = row_iter.next() {
                 write!(&mut value, "{}", col).expect("formatting to a string shouldn't fail");
+            }
+            draw_cell(&mut writer, &value, space)?;
+            value.clear();
+        }
+
+        writer.write_all("\n".as_bytes())?;
+    }
+
+    write_table_end(writer, column_widths)
+}
+
+/// Render a table using custom formatters.
+///
+/// TODO
+///
+/// # Errors
+///
+/// If an I/O error is encountered while writing to the `to` writer, that error will be returned.
+pub fn write_table_with_fmt<Row, I: Iterator<Item = Row>, const COLUMN_COUNT: usize>(
+    to: impl Write,
+    iter: I,
+    formatters: &[fn(&Row, &mut String) -> fmt::Result; COLUMN_COUNT],
+    column_names: &[&str; COLUMN_COUNT],
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+) -> io::Result<()> {
+    let mut writer = write_table_start(to, column_names, column_widths)?;
+
+    let mut value = String::new();
+    for row in iter {
+        writer.write_all(VERTICAL_LINE.as_bytes())?;
+
+        let mut formatters = formatters.iter();
+        for space in column_widths.iter().copied().map(NonZeroUsize::get) {
+            if let Some(formatter) = formatters.next() {
+                formatter(&row, &mut value).expect("formatting to a string shouldn't fail");
             }
             draw_cell(&mut writer, &value, space)?;
             value.clear();
@@ -386,6 +422,52 @@ awefz 234 23
 "
         );
         assert_consistent_width(&output);
+    }
+
+    mod custom_fmt {
+        use super::*;
+        use std::net::Ipv4Addr;
+
+        #[test]
+        fn test() {
+            let addrs = [
+                Ipv4Addr::new(192, 168, 0, 1),
+                Ipv4Addr::new(1, 1, 1, 1),
+                Ipv4Addr::new(255, 127, 63, 31),
+            ];
+            let column_names = ["Full address", "BE bits", "Private"];
+            let column_widths = [nz!(17), nz!(12), nz!(7)];
+
+            let formatters: [fn(&Ipv4Addr, &mut String) -> fmt::Result; 3] = [
+                |a, f| write!(f, "{}", a),
+                |a, f| write!(f, "0x{:x}", a.to_bits().to_be()),
+                |a, f| write!(f, "{}", if a.is_private() { "yes" } else { "no" }),
+            ];
+
+            let mut output = Vec::new();
+            write_table_with_fmt(
+                &mut output,
+                addrs.iter().copied(),
+                &formatters,
+                &column_names,
+                &column_widths,
+            )
+            .expect("write_table failed");
+
+            let output = String::from_utf8(output).expect("valid UTF-8");
+            assert_eq!(
+                output,
+                "╭─────────────────┬────────────┬───────╮
+│ Full address    │ BE bits    │Private│
+├─────────────────┼────────────┼───────┤
+│ 192.168.0.1     │ 0x100a8c0  │ yes   │
+│ 1.1.1.1         │ 0x1010101  │ no    │
+│ 255.127.63.31   │ 0x1f3f7fff │ no    │
+╰─────────────────┴────────────┴───────╯
+"
+            );
+            assert_consistent_width(&output);
+        }
     }
 }
 
