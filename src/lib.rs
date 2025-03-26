@@ -113,49 +113,6 @@ pub fn write_table<
 ) -> io::Result<()> {
     let _: () = const { assert!(COLUMN_COUNT > 0, "table must have columns") };
 
-    fn draw_horizontal_line<const COLUMN_COUNT: usize, W: Write>(
-        writer: &mut BufWriter<W>,
-        column_widths: &[NonZeroUsize; COLUMN_COUNT],
-        left: &str,
-        right: &str,
-        intersection: &str,
-    ) -> io::Result<()> {
-        writer.write_all(left.as_bytes())?;
-        for (i, width) in column_widths.iter().enumerate() {
-            for _ in 0..width.get() {
-                writer.write_all(HORIZONTAL_LINE.as_bytes())?;
-            }
-            writer.write_all((if i == COLUMN_COUNT - 1 { right } else { intersection }).as_bytes())?;
-        }
-        writer.write_all("\n".as_bytes())
-    }
-
-    fn draw_cell<W: Write>(writer: &mut BufWriter<W>, value: &str, space: usize) -> io::Result<()> {
-        let value_width = value.width();
-        let padding = if unlikely(value_width > space) {
-            let mut remaining = space - 1;
-            for grapheme in value.graphemes(true) {
-                remaining = match remaining.checked_sub(grapheme.width()) {
-                    Some(r) => r,
-                    None => break,
-                };
-                writer.write_all(grapheme.as_bytes())?;
-            }
-            writer.write_all("…".as_bytes())?;
-            remaining
-        } else {
-            if value_width < space {
-                writer.write_all(" ".as_bytes())?;
-            }
-            writer.write_all(value.as_bytes())?;
-            (space - value_width).saturating_sub(1)
-        };
-        for _ in 0..padding {
-            writer.write_all(" ".as_bytes())?;
-        }
-        writer.write_all(VERTICAL_LINE.as_bytes())
-    }
-
     let mut writer = BufWriter::new(to);
     draw_horizontal_line(&mut writer, column_widths, TOP_LEFT, TOP_RIGHT, TOP_INTERSECTION)?;
 
@@ -197,6 +154,49 @@ pub fn write_table<
         BOTTOM_INTERSECTION,
     )?;
     writer.flush()
+}
+
+fn draw_horizontal_line<const COLUMN_COUNT: usize, W: Write>(
+    writer: &mut BufWriter<W>,
+    column_widths: &[NonZeroUsize; COLUMN_COUNT],
+    left: &str,
+    right: &str,
+    intersection: &str,
+) -> io::Result<()> {
+    writer.write_all(left.as_bytes())?;
+    for (i, width) in column_widths.iter().enumerate() {
+        for _ in 0..width.get() {
+            writer.write_all(HORIZONTAL_LINE.as_bytes())?;
+        }
+        writer.write_all((if i == COLUMN_COUNT - 1 { right } else { intersection }).as_bytes())?;
+    }
+    writer.write_all("\n".as_bytes())
+}
+
+fn draw_cell<W: Write>(writer: &mut BufWriter<W>, value: &str, space: usize) -> io::Result<()> {
+    let value_width = value.width();
+    let padding = if unlikely(value_width > space) {
+        let mut remaining = space - 1;
+        for grapheme in value.graphemes(true) {
+            remaining = match remaining.checked_sub(grapheme.width()) {
+                Some(r) => r,
+                None => break,
+            };
+            writer.write_all(grapheme.as_bytes())?;
+        }
+        writer.write_all("…".as_bytes())?;
+        remaining
+    } else {
+        if value_width < space {
+            writer.write_all(" ".as_bytes())?;
+        }
+        writer.write_all(value.as_bytes())?;
+        (space - value_width).saturating_sub(1)
+    };
+    for _ in 0..padding {
+        writer.write_all(" ".as_bytes())?;
+    }
+    writer.write_all(VERTICAL_LINE.as_bytes())
 }
 
 #[allow(clippy::inline_always)]
