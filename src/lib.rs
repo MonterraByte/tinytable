@@ -101,14 +101,9 @@ const RIGHT_INTERSECTION: &str = "┤";
 /// # Errors
 ///
 /// If an I/O error is encountered while writing to the `to` writer, that error will be returned.
-pub fn write_table<
-    Cell: Display,
-    Row: IntoIterator<Item = Cell>,
-    I: Iterator<Item = Row>,
-    const COLUMN_COUNT: usize,
->(
+pub fn write_table<Cell: Display, Row: IntoIterator<Item = Cell>, const COLUMN_COUNT: usize>(
     to: impl Write,
-    iter: I,
+    iter: impl Iterator<Item = Row>,
     column_names: &[&str; COLUMN_COUNT],
     column_widths: &[NonZeroUsize; COLUMN_COUNT],
 ) -> io::Result<()> {
