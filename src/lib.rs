@@ -177,7 +177,7 @@ pub fn write_table<Cell: Display, Row: IntoIterator<Item = Cell>, const COLUMN_C
 pub fn write_table_with_fmt<Row, const COLUMN_COUNT: usize>(
     to: impl Write,
     iter: impl Iterator<Item = Row>,
-    formatters: &[fn(&Row, &mut String) -> fmt::Result; COLUMN_COUNT],
+    formatters: &[impl Fn(&Row, &mut String) -> fmt::Result; COLUMN_COUNT],
     column_names: &[&str; COLUMN_COUNT],
     column_widths: &[NonZeroUsize; COLUMN_COUNT],
 ) -> io::Result<()> {
@@ -463,7 +463,7 @@ awefz 234 23
         use std::net::Ipv4Addr;
 
         #[test]
-        fn test() {
+        fn addr() {
             let addrs = [
                 Ipv4Addr::new(192, 168, 0, 1),
                 Ipv4Addr::new(1, 1, 1, 1),
@@ -498,6 +498,42 @@ awefz 234 23
 │ 1.1.1.1         │ 0x1010101  │ no    │
 │ 255.127.63.31   │ 0x1f3f7fff │ no    │
 ╰─────────────────┴────────────┴───────╯
+"
+            );
+            assert_consistent_width(&output);
+        }
+
+        #[test]
+        fn uppercase() {
+            let data = [["aaa", "bbb", "ccc", "ddd", "eee"], ["fff", "ggg", "hhh", "iii", "jjj"]];
+            let write_upper =
+                |index: usize| move |row: &&[&str; 5], f: &mut String| write!(f, "{}", row[index].to_ascii_uppercase());
+
+            let mut output = Vec::new();
+            write_table_with_fmt(
+                &mut output,
+                data.iter(),
+                &[
+                    write_upper(0),
+                    write_upper(1),
+                    write_upper(2),
+                    write_upper(3),
+                    write_upper(4),
+                ],
+                &["1", "2", "3", "4", "5"],
+                &[nz!(3); 5],
+            )
+            .expect("write_table failed");
+
+            let output = String::from_utf8(output).expect("valid UTF-8");
+            assert_eq!(
+                output,
+                "╭───┬───┬───┬───┬───╮
+│ 1 │ 2 │ 3 │ 4 │ 5 │
+├───┼───┼───┼───┼───┤
+│AAA│BBB│CCC│DDD│EEE│
+│FFF│GGG│HHH│III│JJJ│
+╰───┴───┴───┴───┴───╯
 "
             );
             assert_consistent_width(&output);
