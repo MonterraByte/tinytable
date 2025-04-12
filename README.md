@@ -8,7 +8,7 @@ A tiny text table drawing library for Rust.
 
 ### Features
 
-* Small code size (it's one function!)
+* Small code size (< 250 lines of code, excluding docs and tests)
 * Minimal dependencies (not zero, because Unicode is hard)
 * Iterator support (you don't need to collect all the data to display at once, it can be streamed)
     * Optional support for the [`fallible-iterator`](https://crates.io/crates/fallible-iterator) crate
@@ -17,7 +17,7 @@ A tiny text table drawing library for Rust.
 
 ### Usage
 
-Run `cargo add tinytable`, or add `tinytable = "0.1"` to the `[dependencies]` section of your `Cargo.toml`.
+Run `cargo add tinytable`, or add `tinytable = "0.2"` to the `[dependencies]` section of your `Cargo.toml`.
 
 After that, call [`tinytable::write_table()`](https://docs.rs/tinytable/0.1/tinytable/fn.write_table.html) in your code.
 
