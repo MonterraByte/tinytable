@@ -19,7 +19,7 @@ A tiny text table drawing library for Rust.
 
 Run `cargo add tinytable`, or add `tinytable = "0.2"` to the `[dependencies]` section of your `Cargo.toml`.
 
-After that, call [`tinytable::write_table()`](https://docs.rs/tinytable/0.1/tinytable/fn.write_table.html) in your code.
+After that, call [`tinytable::write_table()`](https://docs.rs/tinytable/0.2/tinytable/fn.write_table.html) in your code.
 
 ---
 
