@@ -54,6 +54,9 @@ const RIGHT_INTERSECTION: &str = "┤";
 ///
 /// The width of each column is fixed (as specified by `column_widths`).
 ///
+/// (If the type you want to display does not implement [`Display`] (or you want to use a different format
+/// than the one provided by [`Display`]), use [`write_table_with_fmt`] instead.)
+///
 /// [`stdout`]: std::io::Stdout
 ///
 /// # Examples
